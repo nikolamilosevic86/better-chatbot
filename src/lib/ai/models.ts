@@ -96,36 +96,19 @@ if (HAS_OPENROUTER) {
   };
 }
 
-// Unsupported set based on whatever is actually present
-const staticUnsupportedModels = new Set<LanguageModel>([
-  ...(conditionalStaticModels.openai?.["o4-mini"]
-    ? [conditionalStaticModels.openai["o4-mini"]]
-    : []),
-  ...(conditionalStaticModels.ollama?.["gemma3:1b"]
-    ? [conditionalStaticModels.ollama["gemma3:1b"]]
-    : []),
-  ...(conditionalStaticModels.ollama?.["gemma3:4b"]
-    ? [conditionalStaticModels.ollama["gemma3:4b"]]
-    : []),
-  ...(conditionalStaticModels.ollama?.["gemma3:12b"]
-    ? [conditionalStaticModels.ollama["gemma3:12b"]]
-    : []),
-  ...(conditionalStaticModels.openRouter?.["gpt-oss-20b:free"]
-    ? [conditionalStaticModels.openRouter["gpt-oss-20b:free"]]
-    : []),
-  ...(conditionalStaticModels.openRouter?.["qwen3-8b:free"]
-    ? [conditionalStaticModels.openRouter["qwen3-8b:free"]]
-    : []),
-  ...(conditionalStaticModels.openRouter?.["qwen3-14b:free"]
-    ? [conditionalStaticModels.openRouter["qwen3-14b:free"]]
-    : []),
-  ...(conditionalStaticModels.openRouter?.["deepseek-r1:free"]
-    ? [conditionalStaticModels.openRouter["deepseek-r1:free"]]
-    : []),
-  ...(conditionalStaticModels.openRouter?.["gemini-2.0-flash-exp:free"]
-    ? [conditionalStaticModels.openRouter["gemini-2.0-flash-exp:free"]]
-    : []),
-]);
+const staticUnsupportedModels = new Set<LanguageModel>(
+  [
+    conditionalStaticModels.openai?.["o4-mini"],
+    conditionalStaticModels.ollama?.["gemma3:1b"],
+    conditionalStaticModels.ollama?.["gemma3:4b"],
+    conditionalStaticModels.ollama?.["gemma3:12b"],
+    conditionalStaticModels.openRouter?.["gpt-oss-20b:free"],
+    conditionalStaticModels.openRouter?.["qwen3-8b:free"],
+    conditionalStaticModels.openRouter?.["qwen3-14b:free"],
+    conditionalStaticModels.openRouter?.["deepseek-r1:free"],
+    conditionalStaticModels.openRouter?.["gemini-2.0-flash-exp:free"],
+  ].filter((model): model is LanguageModel => model != null),
+);
 
 // OpenAI-compatible dynamic providers
 const openaiCompatibleProviders = openaiCompatibleModelsSafeParse(
@@ -172,12 +155,6 @@ const resolveFallback = (): LanguageModel => {
   for (const provider of Object.keys(allModels)) {
     const entries = Object.values(allModels[provider] || {});
     if (entries.length > 0) return entries[0];
-  }
-
-  // As a last resort, pick a safe local model if present (ollama)
-  if (conditionalStaticModels.ollama) {
-    const values = Object.values(conditionalStaticModels.ollama);
-    if (values.length > 0) return values[0];
   }
 
   throw new Error(
