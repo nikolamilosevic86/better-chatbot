@@ -17,6 +17,15 @@ export type ChatModel = {
   model: string;
 };
 
+export const ChatAttachmentSchema = z.object({
+  type: z.enum(["file", "source-url"]),
+  url: z.string(),
+  mediaType: z.string().optional(),
+  filename: z.string().optional(),
+});
+
+export type ChatAttachment = z.infer<typeof ChatAttachmentSchema>;
+
 export type ChatThread = {
   id: string;
   title: string;
@@ -95,8 +104,10 @@ export const chatApiSchemaRequestBodySchema = z.object({
     .optional(),
   toolChoice: z.enum(["auto", "none", "manual"]),
   mentions: z.array(ChatMentionSchema).optional(),
+  imageTool: z.object({ model: z.string().optional() }).optional(),
   allowedMcpServers: z.record(z.string(), AllowedMCPServerZodSchema).optional(),
   allowedAppDefaultToolkit: z.array(z.string()).optional(),
+  attachments: z.array(ChatAttachmentSchema).optional(),
 });
 
 export type ChatApiSchemaRequestBody = z.infer<
@@ -145,6 +156,8 @@ export type ChatRepository = {
   deleteAllThreads(userId: string): Promise<void>;
 
   deleteUnarchivedThreads(userId: string): Promise<void>;
+
+  checkAccess(id: string, userId: string): Promise<boolean>;
 
   insertMessages(
     messages: PartialBy<ChatMessage, "createdAt">[],

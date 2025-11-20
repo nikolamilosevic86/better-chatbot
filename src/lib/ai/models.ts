@@ -5,13 +5,21 @@ import { openai } from "@ai-sdk/openai";
 import { google } from "@ai-sdk/google";
 import { anthropic } from "@ai-sdk/anthropic";
 import { xai } from "@ai-sdk/xai";
-import { openrouter } from "@openrouter/ai-sdk-provider";
+import { LanguageModelV2, openrouter } from "@openrouter/ai-sdk-provider";
+import { createGroq } from "@ai-sdk/groq";
 import { LanguageModel } from "ai";
 import {
   createOpenAICompatibleModels,
   openaiCompatibleModelsSafeParse,
 } from "./create-openai-compatiable";
 import { ChatModel } from "app-types/chat";
+import {
+  DEFAULT_FILE_PART_MIME_TYPES,
+  OPENAI_FILE_MIME_TYPES,
+  GEMINI_FILE_MIME_TYPES,
+  ANTHROPIC_FILE_MIME_TYPES,
+  XAI_FILE_MIME_TYPES,
+} from "./file-support";
 
 const has = (v: string | undefined | null) =>
   typeof v === "string" && v.trim().length > 0;
@@ -27,6 +35,10 @@ const HAS_OLLAMA = has(process.env.OLLAMA_BASE_URL); // default local URL suppor
 const ollama = createOllama({
   baseURL: process.env.OLLAMA_BASE_URL || "http://localhost:11434/api",
 });
+const _groq = createGroq({
+  baseURL: process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1",
+  apiKey: process.env.GROQ_API_KEY,
+});
 
 // Build static models conditionally per provider
 const conditionalStaticModels: Record<
@@ -41,8 +53,10 @@ if (HAS_OPENAI) {
     "gpt-4.1-mini": openai("gpt-4.1-mini"),
     "o4-mini": openai("o4-mini"),
     o3: openai("o3"),
+    "gpt-5-chat": openai("gpt-5-chat-latest"),
     "gpt-5": openai("gpt-5"),
     "gpt-5-mini": openai("gpt-5-mini"),
+    "gpt-5-codex": openai("gpt-5-codex"),
     "gpt-5-nano": openai("gpt-5-nano"),
   };
 }
@@ -68,6 +82,7 @@ if (HAS_ANTHROPIC) {
 // xAI models
 if (HAS_XAI) {
   conditionalStaticModels.xai = {
+    "grok-4-fast": xai("grok-4-fast-non-reasoning"),
     "grok-4": xai("grok-4"),
     "grok-3": xai("grok-3"),
     "grok-3-mini": xai("grok-3-mini"),
@@ -110,7 +125,93 @@ const staticUnsupportedModels = new Set<LanguageModel>(
   ].filter((model): model is LanguageModel => model != null),
 );
 
-// OpenAI-compatible dynamic providers
+const staticSupportImageInputModels = {
+  ...conditionalStaticModels.google,
+  ...conditionalStaticModels.xai,
+  ...conditionalStaticModels.openai,
+  ...conditionalStaticModels.anthropic,
+};
+
+const staticFilePartSupportByModel = new Map<
+  LanguageModel,
+  readonly string[]
+>();
+
+const registerFileSupport = (
+  model: LanguageModel | undefined,
+  mimeTypes: readonly string[] = DEFAULT_FILE_PART_MIME_TYPES,
+) => {
+  if (!model) return;
+  staticFilePartSupportByModel.set(model, Array.from(mimeTypes));
+};
+
+registerFileSupport(
+  conditionalStaticModels.openai?.["gpt-4.1"],
+  OPENAI_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.openai?.["gpt-4.1-mini"],
+  OPENAI_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.openai?.["gpt-5"],
+  OPENAI_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.openai?.["gpt-5-mini"],
+  OPENAI_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.openai?.["gpt-5-nano"],
+  OPENAI_FILE_MIME_TYPES,
+);
+
+registerFileSupport(
+  conditionalStaticModels.google?.["gemini-2.5-flash-lite"],
+  GEMINI_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.google?.["gemini-2.5-flash"],
+  GEMINI_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.google?.["gemini-2.5-pro"],
+  GEMINI_FILE_MIME_TYPES,
+);
+
+registerFileSupport(
+  conditionalStaticModels.anthropic?.["claude-4-sonnet"],
+  ANTHROPIC_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.anthropic?.["claude-4-opus"],
+  ANTHROPIC_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.anthropic?.["claude-3-7-sonnet"],
+  ANTHROPIC_FILE_MIME_TYPES,
+);
+
+registerFileSupport(
+  conditionalStaticModels.xai?.["grok-4-fast"],
+  XAI_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.xai?.["grok-4"],
+  XAI_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.xai?.["grok-3"],
+  XAI_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.xai?.["grok-3-mini"],
+  XAI_FILE_MIME_TYPES,
+);
+registerFileSupport(
+  conditionalStaticModels.openRouter?.["gemini-2.0-flash-exp:free"],
+  GEMINI_FILE_MIME_TYPES,
+);
 const openaiCompatibleProviders = openaiCompatibleModelsSafeParse(
   process.env.OPENAI_COMPATIBLE_DATA,
 );
@@ -134,6 +235,14 @@ const allUnsupportedModels = new Set<LanguageModel>([
 
 export const isToolCallUnsupportedModel = (model: LanguageModel) => {
   return allUnsupportedModels.has(model);
+};
+
+const isImageInputUnsupportedModel = (model: LanguageModelV2) => {
+  return !Object.values(staticSupportImageInputModels).includes(model);
+};
+
+export const getFilePartSupportedMimeTypes = (model: LanguageModel) => {
+  return staticFilePartSupportByModel.get(model) ?? [];
 };
 
 // Helper: resolve fallback from env E2E_DEFAULT_MODEL or first available
@@ -170,10 +279,42 @@ export const customModelProvider = {
     models: Object.entries(models).map(([name, model]) => ({
       name,
       isToolCallUnsupported: isToolCallUnsupportedModel(model),
+      isImageInputUnsupported: isImageInputUnsupportedModel(
+        model as LanguageModelV2,
+      ),
+      supportedFileMimeTypes: [...getFilePartSupportedMimeTypes(model)],
     })),
+    hasAPIKey: checkProviderAPIKey(provider),
   })),
   getModel: (model?: ChatModel): LanguageModel => {
     if (!model) return fallbackModel;
     return allModels[model.provider]?.[model.model] || fallbackModel;
   },
 };
+
+function checkProviderAPIKey(provider: string) {
+  let key: string | undefined;
+  switch (provider) {
+    case "openai":
+      key = process.env.OPENAI_API_KEY;
+      break;
+    case "google":
+      key = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      break;
+    case "anthropic":
+      key = process.env.ANTHROPIC_API_KEY;
+      break;
+    case "xai":
+      key = process.env.XAI_API_KEY;
+      break;
+    case "groq":
+      key = process.env.GROQ_API_KEY;
+      break;
+    case "openRouter":
+      key = process.env.OPENROUTER_API_KEY;
+      break;
+    default:
+      return true; // assume the provider has an API key
+  }
+  return !!key && key != "****";
+}

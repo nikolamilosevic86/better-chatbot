@@ -2,7 +2,6 @@
 
 import { useSidebar } from "ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "ui/tooltip";
-import { Toggle } from "ui/toggle";
 import {
   AudioWaveformIcon,
   ChevronDown,
@@ -15,25 +14,49 @@ import { Separator } from "ui/separator";
 import { useEffect, useMemo } from "react";
 import { ThreadDropdown } from "../thread-dropdown";
 import { appStore } from "@/app/store";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useShallow } from "zustand/shallow";
 import { getShortcutKeyList, Shortcuts } from "lib/keyboard-shortcuts";
 import { useTranslations } from "next-intl";
 import { TextShimmer } from "ui/text-shimmer";
+import { buildReturnUrl } from "lib/admin/navigation-utils";
+import { BackButton } from "@/components/layouts/back-button";
 
 export function AppHeader() {
   const t = useTranslations();
   const [appStoreMutate] = appStore(useShallow((state) => [state.mutate]));
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, open } = useSidebar();
   const currentPaths = usePathname();
+  const searchParams = useSearchParams();
+
+  const showActionButtons = useMemo(() => {
+    if (currentPaths.startsWith("/admin")) {
+      return false;
+    }
+    return true;
+  }, [currentPaths]);
 
   const componentByPage = useMemo(() => {
     if (currentPaths.startsWith("/chat/")) {
       return <ThreadDropdownComponent />;
     }
-  }, [currentPaths]);
+    if (
+      currentPaths.startsWith("/admin/users/") &&
+      currentPaths.split("/").length > 3
+    ) {
+      const searchPageParams = searchParams.get("searchPageParams");
+      const returnUrl = buildReturnUrl("/admin/users", searchPageParams || "");
+      return (
+        <BackButton
+          data-testid="admin-users-back-button"
+          returnUrl={returnUrl}
+          title={t("Admin.Users.backToUsers")}
+        />
+      );
+    }
+  }, [currentPaths, searchParams]);
 
-  const OPENAI_KEY_PRESENT =
+  const _OPENAI_KEY_PRESENT =
     typeof process !== "undefined" &&
     process.env.NEXT_PUBLIC_OPENAI_API_KEY_DEFINED === "1";
 
@@ -41,13 +64,20 @@ export function AppHeader() {
     <header className="sticky top-0 z-50 flex items-center px-3 py-2">
       <Tooltip>
         <TooltipTrigger asChild>
-          <Toggle
+          <Button
+            variant="ghost"
+            size="icon"
             aria-label="Toggle Sidebar"
-            onClick={toggleSidebar}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleSidebar();
+            }}
             data-testid="sidebar-toggle"
+            data-state={open ? "open" : "closed"}
           >
             <PanelLeft />
-          </Toggle>
+          </Button>
         </TooltipTrigger>
         <TooltipContent align="start" side="bottom">
           <div className="flex items-center gap-2">
@@ -68,9 +98,8 @@ export function AppHeader() {
 
       {componentByPage}
       <div className="flex-1" />
-
-      <div className="flex items-center gap-2">
-        {OPENAI_KEY_PRESENT && (
+      {showActionButtons && (
+        <div className="flex items-center gap-2">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -106,45 +135,45 @@ export function AppHeader() {
               </div>
             </TooltipContent>
           </Tooltip>
-        )}
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size={"icon"}
-              variant={"secondary"}
-              className="bg-secondary/40"
-              onClick={() => {
-                appStoreMutate((state) => ({
-                  temporaryChat: {
-                    ...state.temporaryChat,
-                    isOpen: !state.temporaryChat.isOpen,
-                  },
-                }));
-              }}
-            >
-              <MessageCircleDashed className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent align="end" side="bottom">
-            <div className="text-xs flex items-center gap-2">
-              {t("KeyboardShortcuts.toggleTemporaryChat")}
-              <div className="text-xs text-muted-foreground flex items-center gap-1">
-                {getShortcutKeyList(Shortcuts.toggleTemporaryChat).map(
-                  (key) => (
-                    <span
-                      className="w-5 h-5 flex items-center justify-center bg-muted rounded "
-                      key={key}
-                    >
-                      {key}
-                    </span>
-                  ),
-                )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size={"icon"}
+                variant={"secondary"}
+                className="bg-secondary/40"
+                onClick={() => {
+                  appStoreMutate((state) => ({
+                    temporaryChat: {
+                      ...state.temporaryChat,
+                      isOpen: !state.temporaryChat.isOpen,
+                    },
+                  }));
+                }}
+              >
+                <MessageCircleDashed className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent align="end" side="bottom">
+              <div className="text-xs flex items-center gap-2">
+                {t("KeyboardShortcuts.toggleTemporaryChat")}
+                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                  {getShortcutKeyList(Shortcuts.toggleTemporaryChat).map(
+                    (key) => (
+                      <span
+                        className="w-5 h-5 flex items-center justify-center bg-muted rounded "
+                        key={key}
+                      >
+                        {key}
+                      </span>
+                    ),
+                  )}
+                </div>
               </div>
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      </div>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      )}
     </header>
   );
 }

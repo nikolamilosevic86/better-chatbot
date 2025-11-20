@@ -1,6 +1,6 @@
 "use client";
 
-import { getToolName, ToolUIPart, UIMessage } from "ai";
+import { FileUIPart, getToolName, ToolUIPart, UIMessage } from "ai";
 import {
   Check,
   Copy,
@@ -15,9 +15,12 @@ import {
   TriangleAlert,
   HammerIcon,
   EllipsisIcon,
+  FileIcon,
+  Download,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "ui/tooltip";
 import { Button } from "ui/button";
+import { Badge } from "ui/badge";
 import { Markdown } from "./markdown";
 import { cn, safeJSONParse, truncateString } from "lib/utils";
 import JsonView from "ui/json-view";
@@ -48,7 +51,7 @@ import {
   VercelAIWorkflowToolStreamingResultTag,
 } from "app-types/workflow";
 import { Avatar, AvatarFallback, AvatarImage } from "ui/avatar";
-import { DefaultToolName } from "lib/ai/tools";
+import { DefaultToolName, ImageToolName } from "lib/ai/tools";
 import {
   Shortcut,
   getShortcutKeyList,
@@ -70,23 +73,25 @@ interface UserMessagePartProps {
   part: TextMessagePart;
   isLast: boolean;
   message: UIMessage;
-  setMessages: UseChatHelpers<UIMessage>["setMessages"];
-  sendMessage: UseChatHelpers<UIMessage>["sendMessage"];
-  status: UseChatHelpers<UIMessage>["status"];
+  setMessages?: UseChatHelpers<UIMessage>["setMessages"];
+  sendMessage?: UseChatHelpers<UIMessage>["sendMessage"];
+  status?: UseChatHelpers<UIMessage>["status"];
   isError?: boolean;
+  readonly?: boolean;
 }
 
 interface AssistMessagePartProps {
   part: AssistMessagePart;
-  isLast: boolean;
-  isLoading: boolean;
+  isLast?: boolean;
+  isLoading?: boolean;
   message: UIMessage;
-  prevMessage: UIMessage;
+  prevMessage?: UIMessage;
   showActions: boolean;
   threadId?: string;
-  setMessages: UseChatHelpers<UIMessage>["setMessages"];
-  sendMessage: UseChatHelpers<UIMessage>["sendMessage"];
+  setMessages?: UseChatHelpers<UIMessage>["setMessages"];
+  sendMessage?: UseChatHelpers<UIMessage>["sendMessage"];
   isError?: boolean;
+  readonly?: boolean;
 }
 
 interface ToolMessagePartProps {
@@ -98,6 +103,7 @@ interface ToolMessagePartProps {
   addToolResult?: UseChatHelpers<UIMessage>["addToolResult"];
   isError?: boolean;
   setMessages?: UseChatHelpers<UIMessage>["setMessages"];
+  readonly?: boolean;
 }
 
 const MAX_TEXT_LENGTH = 600;
@@ -109,6 +115,7 @@ export const UserMessagePart = memo(
     message,
     setMessages,
     sendMessage,
+    readonly,
     isError,
   }: UserMessagePartProps) {
     const { copied, copy } = useCopy();
@@ -126,6 +133,7 @@ export const UserMessagePart = memo(
         : truncateString(part.text, MAX_TEXT_LENGTH);
 
     const deleteMessage = useCallback(async () => {
+      if (!setMessages) return;
       const ok = await notify.confirm({
         title: "Delete Message",
         description: "Are you sure you want to delete this message?",
@@ -154,7 +162,7 @@ export const UserMessagePart = memo(
       }
     }, [status]);
 
-    if (mode === "edit") {
+    if (mode === "edit" && setMessages && sendMessage) {
       return (
         <div className="flex flex-row gap-2 items-start w-full">
           <MessageEditor
@@ -220,41 +228,45 @@ export const UserMessagePart = memo(
               </TooltipTrigger>
               <TooltipContent side="bottom">Copy</TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  data-testid="message-edit-button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-3! p-4!"
-                  onClick={() => setMode("edit")}
-                >
-                  <Pencil />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Edit</TooltipContent>
-            </Tooltip>
+            {!readonly && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      data-testid="message-edit-button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-3! p-4!"
+                      onClick={() => setMode("edit")}
+                    >
+                      <Pencil />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Edit</TooltipContent>
+                </Tooltip>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  disabled={isDeleting}
-                  onClick={deleteMessage}
-                  variant="ghost"
-                  size="icon"
-                  className="size-3! p-4! hover:text-destructive"
-                >
-                  {isDeleting ? (
-                    <Loader className="animate-spin" />
-                  ) : (
-                    <Trash2 />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="text-destructive" side="bottom">
-                Delete Message
-              </TooltipContent>
-            </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      disabled={isDeleting}
+                      onClick={deleteMessage}
+                      variant="ghost"
+                      size="icon"
+                      className="size-3! p-4! hover:text-destructive"
+                    >
+                      {isDeleting ? (
+                        <Loader className="animate-spin" />
+                      ) : (
+                        <Trash2 />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="text-destructive" side="bottom">
+                    Delete Message
+                  </TooltipContent>
+                </Tooltip>
+              </>
+            )}
           </div>
         )}
         <div ref={ref} className="min-w-0" />
@@ -281,6 +293,7 @@ export const AssistMessagePart = memo(function AssistMessagePart({
   isError,
   threadId,
   setMessages,
+  readonly,
   sendMessage,
 }: AssistMessagePartProps) {
   const { copied, copy } = useCopy();
@@ -295,6 +308,7 @@ export const AssistMessagePart = memo(function AssistMessagePart({
   }, [metadata, agentList]);
 
   const deleteMessage = useCallback(async () => {
+    if (!setMessages) return;
     const ok = await notify.confirm({
       title: "Delete Message",
       description: "Are you sure you want to delete this message?",
@@ -317,6 +331,7 @@ export const AssistMessagePart = memo(function AssistMessagePart({
   }, [message.id]);
 
   const handleModelChange = (model: ChatModel) => {
+    if (!setMessages || !sendMessage || !prevMessage) return;
     safe(() => setIsLoading(true))
       .ifOk(() =>
         threadId
@@ -375,39 +390,48 @@ export const AssistMessagePart = memo(function AssistMessagePart({
             </TooltipTrigger>
             <TooltipContent>Copy</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div>
-                <SelectModel onSelect={handleModelChange}>
+          {!readonly && (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <SelectModel onSelect={handleModelChange}>
+                      <Button
+                        data-testid="message-edit-button data-[state=open]:bg-secondary!"
+                        variant="ghost"
+                        size="icon"
+                        className="size-3! p-4!"
+                      >
+                        {<RefreshCw />}
+                      </Button>
+                    </SelectModel>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>Change Model</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Button
-                    data-testid="message-edit-button data-[state=open]:bg-secondary!"
                     variant="ghost"
                     size="icon"
-                    className="size-3! p-4!"
+                    disabled={isDeleting}
+                    onClick={deleteMessage}
+                    className="size-3! p-4! hover:text-destructive"
                   >
-                    {<RefreshCw />}
+                    {isDeleting ? (
+                      <Loader className="animate-spin" />
+                    ) : (
+                      <Trash2 />
+                    )}
                   </Button>
-                </SelectModel>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>Change Model</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={isDeleting}
-                onClick={deleteMessage}
-                className="size-3! p-4! hover:text-destructive"
-              >
-                {isDeleting ? <Loader className="animate-spin" /> : <Trash2 />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="text-destructive">
-              Delete Message
-            </TooltipContent>
-          </Tooltip>
+                </TooltipTrigger>
+                <TooltipContent className="text-destructive">
+                  Delete Message
+                </TooltipContent>
+              </Tooltip>
+            </>
+          )}
+
           {metadata && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -569,6 +593,7 @@ export const ReasoningPart = memo(function ReasoningPart({
 }: {
   reasoningText: string;
   isThinking?: boolean;
+  readonly?: boolean;
 }) {
   const [isExpanded, setIsExpanded] = useState(isThinking);
 
@@ -690,6 +715,17 @@ const CodeExecutor = dynamic(
   },
 );
 
+const ImageGeneratorToolInvocation = dynamic(
+  () =>
+    import("./tool-invocation/image-generator").then(
+      (mod) => mod.ImageGeneratorToolInvocation,
+    ),
+  {
+    ssr: false,
+    loading,
+  },
+);
+
 // Local shortcuts for tool invocation approval/rejection
 const approveToolInvocationShortcut: Shortcut = {
   description: "approveToolInvocation",
@@ -713,7 +749,6 @@ export const ToolMessagePart = memo(
     isLast,
     showActions,
     addToolResult,
-
     isError,
     messageId,
     setMessages,
@@ -839,6 +874,10 @@ export const ToolMessagePart = memo(
         toolName === DefaultToolName.WebContent
       ) {
         return <WebSearchToolInvocation part={part} />;
+      }
+
+      if (toolName === ImageToolName) {
+        return <ImageGeneratorToolInvocation part={part} />;
       }
 
       if (toolName === DefaultToolName.JavascriptExecution) {
@@ -1140,3 +1179,251 @@ export const ToolMessagePart = memo(
 );
 
 ToolMessagePart.displayName = "ToolMessagePart";
+
+// File Message Part Component
+interface FileMessagePartProps {
+  part: FileUIPart; // FileUIPart from AI SDK
+  isUserMessage: boolean;
+}
+
+export const FileMessagePart = memo(
+  ({ part, isUserMessage }: FileMessagePartProps) => {
+    const isImage = part.mediaType?.startsWith("image/");
+
+    const fileExtension =
+      part.filename?.split(".").pop()?.toUpperCase() ||
+      part.mediaType?.split("/").pop()?.toUpperCase() ||
+      "FILE";
+    const fileUrl = part.url;
+    const filename =
+      part.filename || part.url?.split("/").pop() || "Attachment";
+    const secondaryLabel =
+      part.mediaType && part.mediaType !== "application/octet-stream"
+        ? part.mediaType
+        : undefined;
+
+    if (isImage && fileUrl) {
+      return (
+        <div
+          className={cn(
+            "max-w-md rounded-lg overflow-hidden border border-border",
+            isUserMessage ? "ml-auto" : "mr-auto",
+          )}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={fileUrl}
+            alt={part.filename || "Uploaded image"}
+            className="w-full h-auto"
+          />
+          {part.filename && (
+            <div className="px-3 py-2 bg-muted text-sm text-muted-foreground">
+              {part.filename}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Non-image file
+    return (
+      <div
+        className={cn(
+          "max-w-md rounded-2xl border border-border/80 p-4 shadow-sm backdrop-blur-sm",
+          isUserMessage
+            ? "ml-auto bg-accent text-accent-foreground border-accent/40"
+            : "mr-auto bg-muted/60 text-foreground",
+        )}
+      >
+        <div className="flex items-start gap-4">
+          <div
+            className={cn(
+              "flex-shrink-0 rounded-xl p-3",
+              isUserMessage ? "bg-accent-foreground/10" : "bg-muted",
+            )}
+          >
+            <FileIcon
+              className={cn(
+                "size-6",
+                isUserMessage
+                  ? "text-accent-foreground/80"
+                  : "text-muted-foreground",
+              )}
+            />
+          </div>
+          <div className="flex-1 min-w-0 space-y-1 pr-3">
+            <p
+              className={cn(
+                "text-sm font-medium line-clamp-1",
+                isUserMessage ? "text-accent-foreground" : "text-foreground",
+              )}
+              title={filename}
+            >
+              {filename}
+            </p>
+            <div
+              className={cn(
+                "flex flex-wrap items-center gap-2 text-xs",
+                isUserMessage
+                  ? "text-accent-foreground/70"
+                  : "text-muted-foreground",
+              )}
+            >
+              <Badge
+                variant="outline"
+                className={cn(
+                  "uppercase tracking-wide px-2 py-0.5",
+                  isUserMessage &&
+                    "border-accent-foreground/30 text-accent-foreground/90",
+                )}
+              >
+                {fileExtension}
+              </Badge>
+              {secondaryLabel && (
+                <span
+                  className={cn(
+                    "truncate max-w-[10rem]",
+                    isUserMessage
+                      ? "text-accent-foreground/70"
+                      : "text-muted-foreground",
+                  )}
+                  title={secondaryLabel}
+                >
+                  {secondaryLabel}
+                </span>
+              )}
+            </div>
+          </div>
+          {fileUrl && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  asChild
+                  size="icon"
+                  variant="ghost"
+                  className={cn(
+                    "size-9 flex-shrink-0 hover:text-foreground",
+                    isUserMessage
+                      ? "text-accent-foreground/70 hover:text-accent-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  <a href={fileUrl} download={part.filename ?? filename}>
+                    <Download className="size-4" />
+                    <span className="sr-only">Download {filename}</span>
+                  </a>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Download</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      </div>
+    );
+  },
+);
+
+FileMessagePart.displayName = "FileMessagePart";
+
+// Source URL (non-model) attachment renderer
+export function SourceUrlMessagePart({
+  part,
+  isUserMessage,
+}: {
+  part: { type: "source-url"; url: string; title?: string; mediaType?: string };
+  isUserMessage: boolean;
+}) {
+  const name = part.title || part.url?.split("/").pop() || "attachment";
+  const ext = name.split(".").pop()?.toUpperCase() || "FILE";
+  const mediaType =
+    part.mediaType && part.mediaType !== "application/octet-stream"
+      ? part.mediaType
+      : undefined;
+  return (
+    <div
+      className={cn(
+        "max-w-md rounded-2xl border border-border/80 p-4 backdrop-blur-sm shadow-sm",
+        isUserMessage
+          ? "ml-auto bg-accent text-accent-foreground border-accent/40"
+          : "mr-auto bg-muted/60 text-foreground",
+      )}
+    >
+      <div className="flex items-start gap-4 max-w-sm">
+        <div
+          className={cn(
+            "flex-shrink-0 rounded-xl p-3",
+            isUserMessage ? "bg-accent-foreground/10" : "bg-muted",
+          )}
+        >
+          <FileIcon
+            className={cn(
+              "size-6",
+              isUserMessage
+                ? "text-accent-foreground/80"
+                : "text-muted-foreground",
+            )}
+          />
+        </div>
+        <div className="flex-1 min-w-0 space-y-1 pr-3">
+          <a
+            href={part.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "text-sm font-medium hover:underline line-clamp-1",
+              isUserMessage ? "text-accent-foreground" : "text-foreground",
+            )}
+            title={name}
+          >
+            {name}
+          </a>
+          <div
+            className={cn(
+              "flex flex-wrap items-center gap-2 text-xs",
+              isUserMessage
+                ? "text-accent-foreground/70"
+                : "text-muted-foreground",
+            )}
+          >
+            <Badge
+              variant="outline"
+              className={cn(
+                "uppercase tracking-wide px-2 py-0.5",
+                isUserMessage &&
+                  "border-accent-foreground/30 text-accent-foreground/90",
+              )}
+            >
+              {ext}
+            </Badge>
+            {mediaType && (
+              <span className="truncate max-w-[10rem]" title={mediaType}>
+                {mediaType}
+              </span>
+            )}
+          </div>
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              asChild
+              size="icon"
+              variant="ghost"
+              className={cn(
+                "size-9 flex-shrink-0 hover:text-foreground",
+                isUserMessage
+                  ? "text-accent-foreground/70 hover:text-accent-foreground"
+                  : "text-muted-foreground",
+              )}
+            >
+              <a href={part.url} target="_blank" rel="noopener noreferrer">
+                <Download className="size-4" />
+                <span className="sr-only">Open attachment</span>
+              </a>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Open attachment</TooltipContent>
+        </Tooltip>
+      </div>
+    </div>
+  );
+}

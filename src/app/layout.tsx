@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "katex/dist/katex.min.css";
 import {
   ThemeProvider,
   ThemeStyleProvider,
@@ -23,8 +24,6 @@ export const metadata: Metadata = {
     "Better Chatbot is a chatbot that uses the Tools to answer questions.",
 };
 
-// const themes = BASE_THEMES.flatMap((t) => [t, `${t}-dark`]);
-
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -39,7 +38,7 @@ export default async function RootLayout({
       >
         <ThemeProvider
           attribute="class"
-          defaultTheme="dark"
+          defaultTheme="system"
           themes={["light", "dark"]}
           storageKey="app-theme-v2"
           disableTransitionOnChange

@@ -20,6 +20,7 @@ export default () => {
     },
     experimental: {
       taint: true,
+      authInterrupts: true,
     },
   };
   const withNextIntl = createNextIntlPlugin();

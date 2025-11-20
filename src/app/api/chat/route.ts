@@ -5,6 +5,7 @@ import {
   smoothStream,
   stepCountIs,
   streamText,
+  Tool,
   UIMessage,
 } from "ai";
 
@@ -19,7 +20,11 @@ import {
   buildUserSystemPrompt,
   buildToolCallUnsupportedModelSystemPrompt,
 } from "lib/ai/prompts";
-import { chatApiSchemaRequestBodySchema, ChatMetadata } from "app-types/chat";
+import {
+  chatApiSchemaRequestBodySchema,
+  ChatMention,
+  ChatMetadata,
+} from "app-types/chat";
 
 import { errorIf, safe } from "ts-safe";
 
@@ -42,6 +47,10 @@ import {
 import { getSession } from "auth/server";
 import { colorize } from "consola/utils";
 import { generateUUID } from "lib/utils";
+import { nanoBananaTool, openaiImageTool } from "lib/ai/tools/image";
+import { ImageToolName } from "lib/ai/tools";
+import { buildCsvIngestionPreviewParts } from "@/lib/ai/ingest/csv-ingest";
+import { serverFileStorage } from "lib/file-storage";
 
 const logger = globalLogger.withDefaults({
   message: colorize("blackBright", `Chat API: `),
@@ -63,7 +72,9 @@ export async function POST(request: Request) {
       toolChoice,
       allowedAppDefaultToolkit,
       allowedMcpServers,
+      imageTool,
       mentions = [],
+      attachments = [],
     } = chatApiSchemaRequestBodySchema.parse(json);
 
     const model = customModelProvider.getModel(chatModel);
@@ -96,11 +107,80 @@ export async function POST(request: Request) {
     if (messages.at(-1)?.id == message.id) {
       messages.pop();
     }
+    const ingestionPreviewParts = await buildCsvIngestionPreviewParts(
+      attachments,
+      (key) => serverFileStorage.download(key),
+    );
+    if (ingestionPreviewParts.length) {
+      const baseParts = [...message.parts];
+      let insertionIndex = -1;
+      for (let i = baseParts.length - 1; i >= 0; i -= 1) {
+        if (baseParts[i]?.type === "text") {
+          insertionIndex = i;
+          break;
+        }
+      }
+      if (insertionIndex !== -1) {
+        baseParts.splice(insertionIndex, 0, ...ingestionPreviewParts);
+        message.parts = baseParts;
+      } else {
+        message.parts = [...baseParts, ...ingestionPreviewParts];
+      }
+    }
+
+    if (attachments.length) {
+      const firstTextIndex = message.parts.findIndex(
+        (part: any) => part?.type === "text",
+      );
+      const attachmentParts: any[] = [];
+
+      attachments.forEach((attachment) => {
+        const exists = message.parts.some(
+          (part: any) =>
+            part?.type === attachment.type && part?.url === attachment.url,
+        );
+        if (exists) return;
+
+        if (attachment.type === "file") {
+          attachmentParts.push({
+            type: "file",
+            url: attachment.url,
+            mediaType: attachment.mediaType,
+            filename: attachment.filename,
+          });
+        } else if (attachment.type === "source-url") {
+          attachmentParts.push({
+            type: "source-url",
+            url: attachment.url,
+            mediaType: attachment.mediaType,
+            title: attachment.filename,
+          });
+        }
+      });
+
+      if (attachmentParts.length) {
+        if (firstTextIndex >= 0) {
+          message.parts = [
+            ...message.parts.slice(0, firstTextIndex),
+            ...attachmentParts,
+            ...message.parts.slice(firstTextIndex),
+          ];
+        } else {
+          message.parts = [...message.parts, ...attachmentParts];
+        }
+      }
+    }
+
     messages.push(message);
 
     const supportToolCall = !isToolCallUnsupportedModel(model);
 
-    const agentId = mentions.find((m) => m.type === "agent")?.agentId;
+    const agentId = (
+      mentions.find((m) => m.type === "agent") as Extract<
+        ChatMention,
+        { type: "agent" }
+      >
+    )?.agentId;
 
     const agent = await rememberAgentAction(agentId, session.user.id);
 
@@ -108,8 +188,12 @@ export async function POST(request: Request) {
       mentions.push(...agent.instructions.mentions);
     }
 
+    const useImageTool = Boolean(imageTool?.model);
+
     const isToolCallAllowed =
-      supportToolCall && (toolChoice != "none" || mentions.length > 0);
+      supportToolCall &&
+      (toolChoice != "none" || mentions.length > 0) &&
+      !useImageTool;
 
     const metadata: ChatMetadata = {
       agentId: agent?.id,
@@ -191,7 +275,18 @@ export async function POST(request: Request) {
           !supportToolCall && buildToolCallUnsupportedModelSystemPrompt,
         );
 
-        const vercelAITooles = safe({ ...MCP_TOOLS, ...WORKFLOW_TOOLS })
+        const IMAGE_TOOL: Record<string, Tool> = useImageTool
+          ? {
+              [ImageToolName]:
+                imageTool?.model === "google"
+                  ? nanoBananaTool
+                  : openaiImageTool,
+            }
+          : {};
+        const vercelAITooles = safe({
+          ...MCP_TOOLS,
+          ...WORKFLOW_TOOLS,
+        })
           .map((t) => {
             const bindingTools =
               toolChoice === "manual" ||
@@ -201,6 +296,7 @@ export async function POST(request: Request) {
             return {
               ...bindingTools,
               ...APP_DEFAULT_TOOLS, // APP_DEFAULT_TOOLS Not Supported Manual
+              ...IMAGE_TOOL,
             };
           })
           .unwrap();
@@ -217,9 +313,13 @@ export async function POST(request: Request) {
         logger.info(
           `allowedMcpTools: ${allowedMcpTools.length ?? 0}, allowedAppDefaultToolkit: ${allowedAppDefaultToolkit?.length ?? 0}`,
         );
-        logger.info(
-          `binding tool count APP_DEFAULT: ${Object.keys(APP_DEFAULT_TOOLS ?? {}).length}, MCP: ${Object.keys(MCP_TOOLS ?? {}).length}, Workflow: ${Object.keys(WORKFLOW_TOOLS ?? {}).length}`,
-        );
+        if (useImageTool) {
+          logger.info(`binding tool count Image: ${imageTool?.model}`);
+        } else {
+          logger.info(
+            `binding tool count APP_DEFAULT: ${Object.keys(APP_DEFAULT_TOOLS ?? {}).length}, MCP: ${Object.keys(MCP_TOOLS ?? {}).length}, Workflow: ${Object.keys(WORKFLOW_TOOLS ?? {}).length}`,
+          );
+        }
         logger.info(`model: ${chatModel?.provider}/${chatModel?.model}`);
 
         const result = streamText({
